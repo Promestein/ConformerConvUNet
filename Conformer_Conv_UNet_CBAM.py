@@ -13,6 +13,7 @@ from keras.utils import plot_model
 import numpy as np
 import os
 from tensorflow import keras
+import tf_slim as slim
 from tensorflow.keras import layers
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Activation, UpSampling2D,ReLU,LeakyReLU,Add,GlobalAveragePooling2D,AveragePooling2D
 from tensorflow.keras.layers import BatchNormalization, Conv2DTranspose, Concatenate
@@ -43,13 +44,13 @@ def convolution_block(block_input, num_filters=256, kernel_size=3, dilation_rate
     x = layers.BatchNormalization()(x)
     return x
 
+
 def CONFORMER_CONV_UNET(image_size, num_classes,activation):
     # pdb.set_trace()
     model_input = keras.Input(shape=(image_size, image_size, 3))
     
     ##################### UNet Encoder Call ####################
     skip_list = []
-    print(model_input.shape)
     skip_list, x = UNet_Enconder(model_input)   
     
     
@@ -127,15 +128,49 @@ def UNet_Enconder(input):
 
     # Construct the encoder blocks 
     skip1, encoder_1 = conformerConvModule(input1, n_filtro)
+    print("skip1",skip1)
+    attention1=CBAM_function(skip1,in_channels=skip1.shape[-1])
+    print("attention1",attention1)
+
     skip2, encoder_2 = conformerConvModule(encoder_1,  n_filtro*2)
+    attention2=CBAM_function(skip2,in_channels=skip2.shape[-1])
     skip3, encoder_3 = conformerConvModule(encoder_2, n_filtro*4)
+    attention3=CBAM_function(skip3,in_channels=skip3.shape[-1])
     skip4, encoder_4 = conformerConvModule(encoder_3, n_filtro*8)
+    attention4=CBAM_function(skip4,in_channels=skip4.shape[-1])
         
     # Preparing the next block
     conv_block = bottleneck_block(encoder_4,  n_filtro*16)
+    print("conv_block",conv_block)
     
-    return [skip1,skip2,skip3,skip4],conv_block
+    # return [skip1,skip2,skip3,skip4],conv_block
+    return [attention1,attention2,attention3,attention4],conv_block
 
+def ChannelAtentionModule_function(x,in_channels, reduction_ratio=16):
+    avgpool = layers.GlobalAveragePooling2D()(x)
+    maxpool = layers.GlobalMaxPool2D()(x)
+    dense1 = layers.Dense(in_channels // reduction_ratio, activation='relu')
+    avg = dense1(avgpool)
+    avg_out = layers.Dense(in_channels, activation='relu')(avg)
+    max = layers.Dense(in_channels, activation='relu')(maxpool)
+    max_out = layers.Dense(in_channels, activation='relu')(max)
+    channel_out = layers.add([avg_out, max_out])
+    channel_out = layers.Activation('sigmoid')(channel_out)
+    channel_out = layers.Reshape((1, 1, in_channels))(channel_out)
+    return channel_out
+
+def SpatialAttentionModule_function(x):
+    avgpool = layers.GlobalAveragePooling2D(keepdims=True)(x)
+    maxpool = layers.GlobalMaxPool2D(keepdims=True)(x)
+    spatial = layers.Concatenate(axis=3)([avgpool, maxpool])
+    spatial = layers.Conv2D(1, 7, padding='same')(spatial)
+    spatial_out = layers.Activation('sigmoid')(spatial)
+    return spatial_out
+
+def CBAM_function(x,in_channels, reduction_ratio=16):
+    x = ChannelAtentionModule_function(x,in_channels, reduction_ratio)*x
+    x = SpatialAttentionModule_function(x)*x
+    return x
 
 ########################################################
 ############### Conformer Conv Architecture ############
@@ -184,6 +219,7 @@ class DepthwiseLayer(tf.keras.layers.Layer):
 
         return self.conv(inputs)
 
+
 #Conformer Conv Module Architecture
 def conformerConvModule(model_input,filters=64, kernel_size=3):
     dim = filters
@@ -195,9 +231,7 @@ def conformerConvModule(model_input,filters=64, kernel_size=3):
     dropout=0.0
 
     ln = tf.keras.layers.LayerNormalization(axis=-1)(model_input)
-    print(ln.shape)
     conv1 = tf.keras.layers.Conv2D(filters=inner_dim*2, kernel_size=1)(ln)
-    print(conv1.shape)
     pointConv = tf.keras.layers.Conv2D(filters=inner_dim * 2, kernel_size=1)(ln)
     act_glu = GatedLinearUnit(units=inner_dim * 2)(pointConv)
     convDeth = tf.keras.layers.Conv2D(filters=inner_dim,                         # 1D Depthwise Conv
@@ -219,7 +253,6 @@ def conformerConvModule(model_input,filters=64, kernel_size=3):
     return skip_connection,next_layer
 
 
-
 def mytest():
     ########################################################
     ################### Define Model #######################
@@ -229,13 +262,13 @@ def mytest():
     
     
     model = CONFORMER_CONV_UNET(image_size=IMAGE_SIZE, num_classes=NUM_CLASSES, activation="softmax")
+    # model = test(image_size=IMAGE_SIZE, num_classes=NUM_CLASSES, activation="softmax")
     model.summary()
-    # patha="G:\\Meu Drive\\!Doutorado_UFMA-UFPI\\!Codes\\PPM\\Revista\\Revista\\Customizando_Bloco_PPM\\1 - Conformer Conv_UNet copy\\"
-    plot_model(model, to_file= patha + "model_plot_UNet_ConformerConv2.png", show_shapes=True, show_layer_names=True)
+    patha="C:\\Users\\Public\\"
+    # plot_model(model, to_file= patha + "model_plot_UNet_ConformerConv2.png", show_shapes=True, show_layer_names=True)
     
     
-    model.save(patha+"keras_model.h5")
+    model.save(patha+"cbam_model.h5")
 
 if __name__ == '__main__':
     mytest()
-
