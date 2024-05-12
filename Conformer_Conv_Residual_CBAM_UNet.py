@@ -128,23 +128,20 @@ def UNet_Enconder(input):
 
     # Construct the encoder blocks 
     skip1, encoder_1 = conformerConvModule(input1, n_filtro)
-    print("skip1",skip1)
-    attention1=CBAM_function(skip1,in_channels=skip1.shape[-1])
-    print("attention1",attention1)
-
+    # attention1=CBAM_function(skip1,in_channels=skip1.shape[-1])
     skip2, encoder_2 = conformerConvModule(encoder_1,  n_filtro*2)
-    attention2=CBAM_function(skip2,in_channels=skip2.shape[-1])
+    # attention2=CBAM_function(skip2,in_channels=skip2.shape[-1])
     skip3, encoder_3 = conformerConvModule(encoder_2, n_filtro*4)
-    attention3=CBAM_function(skip3,in_channels=skip3.shape[-1])
+    # attention3=CBAM_function(skip3,in_channels=skip3.shape[-1])
     skip4, encoder_4 = conformerConvModule(encoder_3, n_filtro*8)
-    attention4=CBAM_function(skip4,in_channels=skip4.shape[-1])
+    # attention4=CBAM_function(skip4,in_channels=skip4.shape[-1])
         
     # Preparing the next block
     conv_block = bottleneck_block(encoder_4,  n_filtro*16)
     print("conv_block",conv_block)
     
-    # return [skip1,skip2,skip3,skip4],conv_block
-    return [attention1,attention2,attention3,attention4],conv_block
+    return [skip1,skip2,skip3,skip4],conv_block
+    # return [attention1,attention2,attention3,attention4],conv_block
 
 def ChannelAtentionModule_function(x,in_channels, reduction_ratio=16):
     avgpool = layers.GlobalAveragePooling2D()(x)
@@ -225,7 +222,7 @@ class DepthwiseLayer(tf.keras.layers.Layer):
 def conformerConvModule(model_input,filters=64, kernel_size=3):
     dim = filters
     # Create skip connection Residual
-    x_skip_res = model_input
+    x_skip_res = CBAM_function(model_input,in_channels=model_input.shape[-1])
     # dim = model_input.shape[-2]
     expansion_factor = 2
     inner_dim = dim * expansion_factor
